@@ -1,0 +1,206 @@
+#!/bin/sh
+# Source code based on cobuntu-config http://github.com/hedone21/cobuntu-config
+# See LICENSE file for copyright and license details
+
+INTERACTIVE=True
+ASK_TO_REBOOT=0
+CONFIG=/boot/config.txt
+EXEC_PATH=/usr/bin/
+
+#
+# Functions for WT
+#
+calc_wt_size() {
+    # NOTE: it's tempting to redirect stderr to /dev/null, so supress error 
+    # output from tput. However in this case, tput detects neither stdout or 
+    # stderr is a tty and so only gives default 80, 24 values
+    WT_HEIGHT=12
+    WT_WIDTH=$(tput cols)
+
+    if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 80 ]; then
+        WT_WIDTH=$(tput cols)
+    elif [ "$WT_WIDTH" -gt 160 ]; then
+        WT_WIDTH=160
+    else
+        WT_WIDTH=120
+    fi
+
+    WT_MENU_HEIGHT=$(($WT_HEIGHT-7))
+}
+
+intro() {
+    DO=$(whiptail --title "utorrent 설치도구 (utorrent-config)" --menu "옵션을 선택하여 주십시오." $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
+    "1 설치:" "utorrent 를 설치합니다" \
+    "2 Etc:" "utorrent 다양한 옵션" \
+    3>&1 1>&2 2>&3)
+    RET=$?
+    if [ $RET -eq 0 ]; then
+        case "$DO" in
+            1\ *)
+                install_config
+                finish
+                ;;
+            2\ *)
+                return
+                ;;
+            *) whiptail --msgbox "Programmer error: unrecognized option" 10 60 1 ;;
+        esac || whiptail --msgbox "There was an error running option $FUN" 10 60 1
+    elif [ $RET -eq 1 ]; then
+        exit 0
+    fi
+}
+
+enter_passwd() {
+    if [ $(id -u) -ne 0 ]; then
+        #sudo ./utorrent-config
+        echo 이 스크립트는 루트 권한을 필요로 합니다. sudo ./utorrent-config 으로 실행시켜주십시오.
+        exit 1
+    fi
+}
+
+finish() {
+    whiptail --yesno --yes-button No --no-button Yes "설치가 완료되었습니다 서버를 실행시키시겠습니까?" 10 60 2
+    if [ $? -eq 1 ]; then # yes
+      sync
+      utserver -settingspath /opt/utorrent-server-v3_0/
+    fi
+    exit 0
+}
+
+#
+# Install Config
+#
+install_config() {
+    do_update
+}
+
+#
+# main 함수
+#
+main_update() {
+    do_update
+}
+
+main_korea_local_settings() {
+    do_local_settings
+}
+
+main_korean_im_settings() {
+    do_ibus_install
+}
+
+main_nanum_install() {
+    do_nanumfont_install
+}
+
+main_useful_apps() {
+    do_useful_apps_install
+}
+
+#
+# Do 함수
+#
+do_update() {
+    cd ${0%/*}
+    wget http://download.utorrent.com/linux/utorrent-server-3.0-25053.tar.gz
+    tar xvzf utorrent-server-3.0-25053.tar.gz -C /opt/
+    chmod -R 777 /opt/utorrent-server-v3_0/
+    ln -s /opt/utorrent-server-v3_0/utserver /usr/bin/utserver
+    
+}
+
+do_local_settings() {
+    ln -s /opt/utorrent-server-v3_0/utserver /usr/bin/utserver
+}
+
+do_ibus_install() {
+    google-chrome-stable http://localhost:8080/gui/
+}
+
+do_nanumfont_install() {
+    rm -rf /opt/utorrent-server-v3_0/
+    rm /usr/bin/utserver
+}
+
+do_useful_apps_install() {
+    cd ${0%/*}
+    rm utorrent-server-3.0-25053.tar.gz
+}
+
+#
+# Command line options for non-interactive use
+#
+for i in $*
+do
+  case $i in
+  --memory-split)
+    OPT_MEMORY_SPLIT=GET
+    printf "Not currently supported\n"
+    exit 1
+    ;;
+  --memory-split=*)
+    OPT_MEMORY_SPLIT=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+    printf "Not currently supported\n"
+    exit 1
+    ;;
+  --expand-rootfs)
+    INTERACTIVE=False
+    do_expand_rootfs
+    printf "Please reboot\n"
+    exit 0
+    ;;
+  --apply-os-config)
+    INTERACTIVE=False
+    do_apply_os_config
+    exit $?
+    ;;
+  *)
+    # unknown option
+    ;;
+  esac
+done
+
+#if [ "GET" = "${OPT_MEMORY_SPLIT:-}" ]; then
+#  set -u # Fail on unset variables
+#  get_current_memory_split
+#  echo $CURRENT_MEMSPLIT
+#  exit 0
+#fi
+
+# Everything else needs to be run as root
+if [ -n "${OPT_MEMORY_SPLIT:-}" ]; then
+  set -e # Fail when a command errors
+  set_memory_split "${OPT_MEMORY_SPLIT}"
+  exit 0
+fi
+
+#
+# Interactive use loop
+#
+calc_wt_size
+enter_passwd
+intro
+while true; do
+    FUN=$(whiptail --title "utorrent 다양한 옵션" --menu "설정 메뉴" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
+    "1 utorrent 설치" "utorrent 서버를 설치합니다..." \
+    "2 utorrent 서버 실행" "utorrent 서버를 실행시킵니다" \
+    "3 utorrent 크롬실행" "브라우저에서 서버를 실행시킵니다" \
+    "4 utorrent 제거" "서버를 제거합니다" \
+    "5 utorrent 설치파일 제거" "서버 설치파일을 디렉토리에서 제거합니다." \
+    3>&1 1>&2 2>&3)
+    RET=$?
+    if [ $RET -eq 1 ]; then
+        finish
+    elif [ $RET -eq 0 ]; then
+    case "$FUN" in
+        1\ *) main_update ;;
+        2\ *) main_korea_local_settings ;;
+        3\ *) main_korean_im_settings ;;
+        4\ *) main_nanum_install ;;
+        5\ *) main_useful_apps ;;
+        *) whiptail --msgbox "Programmer error: unrecognized option" 10 60 1 ;;
+    esac || whiptail --msgbox "There was an error running option $FUN" 10 60 1
+    else
+        exit 1
+    fi
+done
